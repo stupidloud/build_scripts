@@ -19,7 +19,7 @@ jobs:
         C:\tools\msys64\usr\bin\bash -lc "./ffmpeg_dll/prepare.sh -b"
       shell: cmd
       env:
-        HOME: ${{ runner.workspace }}/ffmpeg_build
+        HOME: ${{ runner.workspace }}/build_scripts
     - uses: actions/upload-artifact@master
       name: Upload Artifact
       with:
