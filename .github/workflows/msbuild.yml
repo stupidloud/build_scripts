@@ -26,13 +26,16 @@ jobs:
     #  run: nuget restore ${{env.SOLUTION_FILE_PATH}}
 
     - name: Build
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      # Add additional options to the MSBuild command line here (like platform or verbosity level).
-      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MSYS
+    - shell: msys2 {0}
       run: |
-        #msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
         pacman -Syuu
         pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain p7zip git nasm python unzip
         pacman -S mingw32/mingw-w64-i686-meson mingw64/mingw-w64-x86_64-meson
         pacman -S mingw32/mingw-w64-i686-python-lxml mingw64/mingw-w64-x86_64-python-lxml
+    - run: |
+        set MSYSTEM=MINGW64
         mingw64_vsvar.cmd
+        msys2 -c '<command to test the package>'
