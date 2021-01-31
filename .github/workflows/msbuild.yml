@@ -29,7 +29,7 @@ jobs:
     - uses: msys2/setup-msys2@v2
       with:
         msystem: MSYS
-    - shell: msys2 {0}
+    - shell: cmd
       run: |
         pacman -Syuu
         pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain p7zip git nasm python unzip
