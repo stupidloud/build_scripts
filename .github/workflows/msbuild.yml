@@ -17,6 +17,7 @@ jobs:
         call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64
         set MSYS2_PATH_TYPE=inherit
         C:\tools\msys64\usr\bin\bash -lc "./ffmpeg_dll/prepare.sh -b"
+        dir /s /p mingw64.exe
         dir /s ffmpeg
       shell: cmd
       env:
