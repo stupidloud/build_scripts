@@ -2,8 +2,7 @@
 #msys2用x265ビルドスクリプト
 #pacman -S base-devel mingw-w64-i686-toolchain mingw-w64-x86_64-toolchain p7zip git nasm p7zip
 #そのほかにcmakeのインストールが必要
-#NJOBS=$(($NUMBER_OF_PROCESSORS>16?16:$NUMBER_OF_PROCESSORS))
-NJOBS=8
+NJOBS=$(($NUMBER_OF_PROCESSORS>16?16:$NUMBER_OF_PROCESSORS))
 BUILD_DIR=$HOME/build_x265
 BUILD_DIR_WIN=`cygpath -m ${HOME}`/build_x265
 #cmake.exeのある場所
@@ -16,8 +15,8 @@ X265_BRANCH="master"
 UPDATE_X265="TRUE"
 BUILD_12BIT="ON"
 BUILD_10BIT="ON"
-PROFILE_GEN_CC="-fprofile-generate -gline-tables-only"
-PROFILE_GEN_LD="-fprofile-generate -gline-tables-only"
+PROFILE_GEN_CC="-fprofile-generate"
+PROFILE_GEN_LD="-fprofile-generate"
 PROFILE_USE_CC="-fprofile-use"
 PROFILE_USE_LD="-fprofile-use"
 
@@ -34,11 +33,6 @@ else
     TARGET_ARCH="x64"
 fi
 echo "TARGET_ARCH=${TARGET_ARCH}"
-
-if [ $MSYSTEM == "CLANG64" ]; then
-    export CC=clang
-    export CXX=clang++
-fi
 
 if [ ${TARGET_ARCH} = "x64" ]; then
     BUILD_CCFLAGS="-O3 -msse2 -fpermissive -flto -I${INSTALL_DIR}/include"
@@ -151,15 +145,15 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
     fi
 
     cd ${BUILD_DIR}/${TARGET_ARCH}/x265/build/msys/8bit
-    if [ $BUILD_10BIT = "ON" ] || [ $BUILD_12BIT = "ON" ]; then
-        wait
-        if [ $BUILD_10BIT = "ON" ]; then
-            cp ../10bit/libx265.a libx265_main10.a
-        fi
-        if [ $BUILD_12BIT = "ON" ]; then
-            cp ../12bit/libx265.a libx265_main12.a
-        fi
-    fi
+	if [ $BUILD_10BIT = "ON" ] || [ $BUILD_12BIT = "ON" ]; then
+		wait
+		if [ $BUILD_10BIT = "ON" ]; then
+			cp ../10bit/libx265.a libx265_main10.a
+		fi
+		if [ $BUILD_12BIT = "ON" ]; then
+			cp ../12bit/libx265.a libx265_main12.a
+		fi
+	fi
     cmake -G "MSYS Makefiles" ../../../source \
         -DEXTRA_LIB="${X265_EXTRA_LIB}" \
         -DEXTRA_LINK_FLAGS=-L. \
@@ -176,57 +170,23 @@ if [ "${PROFILE_GEN_CC}" != "" ]; then
     sed -i -e 's/Bdynamic/Bstatic/g' CMakeFiles/cli.dir/linklibs.rsp
     make -j${NJOBS}
 
-    prof_files=()
-    prof_idx=0
-    
-    function run_prof() {
-        ./x265 $@
-        prof_idx=$((prof_idx + 1))
-        for file in default_*_0.profraw; do
-          new_file="${file%.profraw}_${prof_idx}.${file##*.}"
-          mv "$file" "$new_file"
-          echo ${new_file}
-          prof_files+=( ${new_file} )
-        done
-    }
+    #profileのための実行はシングルスレッドで行う
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --preset faster
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --preset fast
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}"
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --preset slow
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --preset slower
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 10 --preset faster
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 10 --preset fast
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 10
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 10 --preset slow
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 10 --preset slower
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 12 --preset faster
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 12 --preset fast
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 12
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 12 --preset slow
+    ./x265 --pools none --frame-threads 1 --lookahead-slices 0 --y4m -o /dev/nul --input "${Y4M_PATH}" --output-depth 12 --preset slower
 
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --preset slower
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 10 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 10 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 10
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 10 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 10 --preset slower
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 12 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 12 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 12
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 12 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx2 --output-depth 12 --preset slower
-
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --preset slower
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 10 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 10 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 10
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 10 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 10 --preset slower
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 12 --preset faster
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 12 --preset fast
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 12
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 12 --preset slow
-    run_prof --y4m -o /dev/null --input "${Y4M_PATH}" --asm avx512 --output-depth 12 --preset slower
-    
-    echo ${prof_files[@]}
-    llvm-profdata merge -output=default.profdata "${prof_files[@]}"
-    
-    PROFILE_USE_CC=${PROFILE_USE_CC}=`pwd`/default.profdata
-    PROFILE_USE_LD=${PROFILE_USE_LD}=`pwd`/default.profdata
 fi
 
 
