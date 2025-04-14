@@ -1,4 +1,5 @@
 #!/bin/bash
+# pacman -S mingw-w64-clang-x86_64-toolchain
 BUILD_DIR=`pwd`/build_svtav1
 BUILD_CCFLAGS="-Ofast -ffast-math -fomit-frame-pointer -flto"
 BUILD_LDFLAGS="-static -static-libgcc -flto -Wl,--gc-sections -Wl,--strip-all"
@@ -13,8 +14,9 @@ PROFILE_USE_CC="-fprofile-use"
 PROFILE_USE_LD="-fprofile-use"
 YUVFILE="/y/Encoders/sakura_op_short_720p.yuv"
 YUVFILE_10="/y/Encoders/sakura_op_short_720p_10.yuv"
+CPUINFO_DIFF=$HOME/patch/svtav1_cpuinfo.diff
 BUILD_PSY="FALSE"
-if [ $1 = "-psy" ]; then
+if [ $# -gt 0 ] && [ $1 = "-psy" ]; then
     BUILD_PSY="TRUE"
     BUILD_DIR=`pwd`/build_svtav1_psy
 fi
@@ -22,6 +24,10 @@ fi
 export CC=gcc
 export CXX=g++
 export PATH="${CMAKE_DIR}:$PATH"
+
+PKGCONFIG=pkg-config
+CHECK_LIBDOVI_NAMES=dovi
+CHECK_LIBHDR10PLUS_NAMES=hdr10plus-rs
 
 #download
 mkdir -p $BUILD_DIR/src
@@ -33,6 +39,7 @@ if [ $MSYSTEM != "MINGW64" ] && [ $MSYSTEM != "CLANG64" ]; then
     exit 1
 else
     TARGET_ARCH="x64"
+    FFMPEG_ARCH="x86_64"
 fi
 
 if [ $MSYSTEM == "CLANG64" ]; then
@@ -56,6 +63,18 @@ else
 fi
 
 
+if [ $BUILD_PSY = "TRUE" ]; then
+    if [ ! -d "dovi_tool-2.1.2" ]; then
+        wget -O dovi_tool-2.1.2.tar.gz https://github.com/quietvoid/dovi_tool/archive/refs/tags/2.1.2.tar.gz
+        tar xf dovi_tool-2.1.2.tar.gz
+    fi
+    
+    if [ ! -d "hdr10plus_tool-1.6.1" ]; then
+        wget -O hdr10plus_tool-1.6.1.tar.gz https://github.com/quietvoid/hdr10plus_tool/archive/refs/tags/1.6.1.tar.gz
+        tar xf hdr10plus_tool-1.6.1.tar.gz
+    fi
+fi
+
 mkdir -p $BUILD_DIR/$TARGET_ARCH
 cd $BUILD_DIR/$TARGET_ARCH
 if [ -d "SVT-AV1" ]; then
@@ -63,7 +82,58 @@ if [ -d "SVT-AV1" ]; then
 fi
 cp -r ../src/SVT-AV1 SVT-AV1
 
+SVTAV1_CMAKE_OPT=
+if [ $BUILD_PSY = "TRUE" ]; then
+    cd $BUILD_DIR/$TARGET_ARCH
+    if [ ! -d "dovi_tool" ]; then
+        find ../src/ -type d -name "dovi_tool-*" | xargs -i cp -r {} ./dovi_tool
+        cd ./dovi_tool/dolby_vision
+        cargo cinstall --target ${FFMPEG_ARCH}-pc-windows-gnu --release --prefix=$INSTALL_DIR
+        # dllを削除し、staticライブラリのみを残す
+        rm $INSTALL_DIR/lib/dovi.dll.a
+        rm $INSTALL_DIR/lib/dovi.def
+        rm $INSTALL_DIR/bin/dovi.dll
+        # static link向けにdovi.pcを編集
+        LIBDOVI_STATIC_LIBS=`awk -F':' '/^Libs.private:/{print $2}' ${INSTALL_DIR}/lib/pkgconfig/dovi.pc`
+        sed -i -e "s/-ldovi/-ldovi ${LIBDOVI_STATIC_LIBS}/g" ${INSTALL_DIR}/lib/pkgconfig/dovi.pc
+
+        #dllからlibファイルを作成
+        #cd target/x86_64-pc-windows-gnu/release
+        #DOVI_DLL_FILENAME=dovi.dll
+        #DOVI_DEF_FILENAME=dovi.def
+        #DOVI_LIB_FILENAME=$(basename $DOVI_DEF_FILENAME .def).lib
+        #lib.exe -machine:$TARGET_ARCH -def:$DOVI_DEF_FILENAME -out:$DOVI_LIB_FILENAME
+    fi
+
+    cd $BUILD_DIR/$TARGET_ARCH
+    if [ ! -d "hdr10plus_tool" ]; then
+        find ../src/ -type d -name "hdr10plus_tool-*" | xargs -i cp -r {} ./hdr10plus_tool
+        cd ./hdr10plus_tool/hdr10plus
+        cargo cinstall --target ${FFMPEG_ARCH}-pc-windows-gnu --release --prefix=$INSTALL_DIR
+        # dllを削除し、staticライブラリのみを残す
+        rm $INSTALL_DIR/lib/hdr10plus-rs.dll.a
+        rm $INSTALL_DIR/lib/hdr10plus-rs.def
+        rm $INSTALL_DIR/bin/hdr10plus-rs.dll
+        # static link向けにdovi.pcを編集
+        LIBHDR10PLUS_STATIC_LIBS=`awk -F':' '/^Libs.private:/{print $2}' ${INSTALL_DIR}/lib/pkgconfig/hdr10plus-rs.pc`
+        sed -i -e "s/-ldovi/-ldovi ${LIBHDR10PLUS_STATIC_LIBS}/g" ${INSTALL_DIR}/lib/pkgconfig/hdr10plus-rs.pc
+    fi
+    
+    export PKG_CONFIG_PATH=${INSTALL_DIR}/lib/pkgconfig
+    LIBDOVI_LIBS=`${PKGCONFIG} --libs ${CHECK_LIBDOVI_NAMES}`
+    LIBDOVI_CFLAGS=`${PKGCONFIG} --cflags ${CHECK_LIBDOVI_NAMES}`
+    LIBHDR10PLUS_LIBS=`${PKGCONFIG} --libs ${CHECK_LIBHDR10PLUS_NAMES}`
+    LIBHDR10PLUS_CFLAGS=`${PKGCONFIG} --cflags ${CHECK_LIBHDR10PLUS_NAMES}`
+    BUILD_CCFLAGS="${BUILD_CCFLAGS} ${LIBDOVI_CFLAGS} ${LIBHDR10PLUS_CFLAGS}"
+    BUILD_LDFLAGS="${BUILD_LDFLAGS} ${LIBDOVI_LIBS} ${LIBHDR10PLUS_LIBS}"
+    SVTAV1_CMAKE_OPT="-DLIBDOVI_FOUND=ON -DLIBHDR10PLUS_RS_FOUND=ON"
+fi
+
+
 cd $BUILD_DIR/$TARGET_ARCH/SVT-AV1
+if [ $BUILD_PSY != "TRUE" ]; then
+    patch -p1 < $CPUINFO_DIFF
+fi
 mkdir build/msys2
 cd build/msys2
 cmake -G "MSYS Makefiles" \
@@ -74,6 +144,7 @@ cmake -G "MSYS Makefiles" \
   -DSVT_AV1_LTO=ON \
   -DENABLE_NASM=ON \
   -DENABLE_AVX512=ON \
+  $SVTAV1_CMAKE_OPT \
   -DCMAKE_ASM_NASM_COMPILER=nasm \
   -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
   -DCMAKE_C_FLAGS="${BUILD_CCFLAGS} ${PROFILE_GEN_CC}" \
@@ -132,6 +203,7 @@ cmake -G "MSYS Makefiles" \
   -DNATIVE=OFF \
   -DENABLE_NASM=ON \
   -DENABLE_AVX512=ON \
+  $SVTAV1_CMAKE_OPT \
   -DCMAKE_ASM_NASM_COMPILER=nasm \
   -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
   -DCMAKE_C_FLAGS="${BUILD_CCFLAGS} ${PROFILE_USE_CC}" \
